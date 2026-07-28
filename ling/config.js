@@ -102,6 +102,14 @@ const HOME_ROUTES = [
     dest: "往將軍澳醫院",
     color: "#e84393",
   },
+  {
+    route: "42C",
+    serviceType: "1",
+    stopId: "28725EBEC5C8EC40",
+    stopName: "青衣轉車站-長安總站",
+    dest: "往藍田",
+    color: "#d35400",
+  },
  {
   route: "297",
   serviceType: "1",
