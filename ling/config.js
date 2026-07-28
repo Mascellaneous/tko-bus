@@ -95,6 +95,14 @@ const HOME_ROUTES = [
    color: "#1a6b5a",
  },
   {
+    route: "38",
+    serviceType: "1",
+    stopId: "6DAB37A3FC9475C3",
+    stopName: "林護紀念中學",
+    dest: "往將軍澳醫院",
+    color: "#e84393",
+  },
+ {
   route: "297",
   serviceType: "1",
   stopId: "20A7DAD5A8294964",
