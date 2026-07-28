@@ -181,14 +181,14 @@ async function fetchAndRenderEta(card) {
       : `<div class="card-eta-primary">
            <span class="card-eta-prefix">仲有</span>
            <span class="card-eta-minutes">${mins}</span>
-           <span class="card-eta-unit">分</span>
+           <span class="card-eta-unit">分鐘</span>
          </div>`;
 
     let nextHtml = "";
     if (etas.length >= 2) {
       const mins2 = minutesFromNow(etas[1].eta);
       if (mins2 > 0) {
-        nextHtml = `<div class="card-eta-next">之後 ${mins2} 分 &nbsp;(${formatTime(etas[1].eta)})</div>`;
+        nextHtml = `<div class="card-eta-next">之後 ${mins2} 分鐘 &nbsp;(${formatTime(etas[1].eta)})</div>`;
       }
     }
 
