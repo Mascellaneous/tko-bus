@@ -3,11 +3,13 @@
  *
  * 雙 Tab 設計：「出街」與「返家」
  * - 開啟時自動偵測 GPS，決定預設 Tab
- * - 用家可手動點擊 Tab 切換
+ * - 用家可手動點擊 Tab 或左右滑動手勢切換
  * - 路線設定請修改 config.js
  */
 
 const KMB_ETA_BASE = "https://data.etabus.gov.hk/v1/transport/kmb/eta";
+let activeTab = "out";
+let refreshTimer = null;
 
 /* ════════════════════════════════════════════════════════
    工具函式
@@ -19,7 +21,7 @@ function minutesFromNow(isoTime) {
 
 function formatTime(isoTime) {
   const d = new Date(isoTime);
-  return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 /** Haversine 距離（米） */
@@ -40,7 +42,10 @@ function haversineMeters(lat1, lng1, lat2, lng2) {
 
 function getCurrentPosition() {
   return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) { reject(new Error("not supported")); return; }
+    if (!navigator.geolocation) {
+      reject(new Error("not supported"));
+      return;
+    }
     navigator.geolocation.getCurrentPosition(
       (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
       (e) => reject(e),
@@ -63,7 +68,7 @@ async function detectTab() {
       return { tab: "home", gpsState: "far" };
     }
   } catch {
-    return { tab: "out", gpsState: "error" };   // 無法取得位置時預設出街
+    return { tab: "out", gpsState: "error" }; // 無法取得位置時預設出街
   }
 }
 
@@ -73,9 +78,9 @@ async function detectTab() {
 
 const GPS_TITLES = {
   loading: "正在取得位置…",
-  ok:      "在家附近（自動切換至出街）",
-  far:     "在外面（自動切換至返家）",
-  error:   "無法取得位置，顯示預設 Tab",
+  ok: "在家附近（自動切換至出街）",
+  far: "在外面（自動切換至返家）",
+  error: "無法取得位置，顯示預設 Tab",
 };
 
 function setGpsStatus(state) {
@@ -88,8 +93,6 @@ function setGpsStatus(state) {
 /* ════════════════════════════════════════════════════════
    Tab 切換
    ════════════════════════════════════════════════════════ */
-
-let activeTab = "out";
 
 function switchTab(tab) {
   activeTab = tab;
@@ -159,10 +162,6 @@ async function fetchAndRenderEta(card) {
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const json = await resp.json();
 
-    // Accept any direction — OUT_ROUTES stops return dir="O", HOME_ROUTES
-    // (inbound/return-journey) stops return dir="I". The API already scopes
-    // results to the correct direction for the given stop+route combination,
-    // so filtering by dir would incorrectly discard HOME_ROUTES data.
     const etas = (json.data || [])
       .filter((e) => e.eta)
       .sort((a, b) => new Date(a.eta) - new Date(b.eta));
@@ -173,16 +172,17 @@ async function fetchAndRenderEta(card) {
     }
 
     const mins = minutesFromNow(etas[0].eta);
-    const primaryHtml = mins <= 0
-      ? `<div class="card-eta-primary">
-           <span class="card-eta-prefix">仲有</span>
-           <span class="card-eta-arriving">到站</span>
-         </div>`
-      : `<div class="card-eta-primary">
-           <span class="card-eta-prefix">仲有</span>
-           <span class="card-eta-minutes">${mins}</span>
-           <span class="card-eta-unit">分鐘</span>
-         </div>`;
+    const primaryHtml =
+      mins <= 0
+        ? `<div class="card-eta-primary">
+             <span class="card-eta-prefix">仲有</span>
+             <span class="card-eta-arriving">到站</span>
+           </div>`
+        : `<div class="card-eta-primary">
+             <span class="card-eta-prefix">仲有</span>
+             <span class="card-eta-minutes">${mins}</span>
+             <span class="card-eta-unit">分鐘</span>
+           </div>`;
 
     let nextHtml = "";
     if (etas.length >= 2) {
@@ -205,20 +205,97 @@ async function fetchAndRenderEta(card) {
 
 async function refreshCurrentTab() {
   const btn = document.getElementById("btn-refresh");
-  btn.classList.add("loading");
-  btn.disabled = true;
+  if (btn) {
+    btn.classList.add("loading");
+    btn.disabled = true;
+  }
 
   const grid = document.getElementById(`grid-${activeTab}`);
   const cards = grid ? [...grid.querySelectorAll(".bus-card")] : [];
   await Promise.all(cards.map(fetchAndRenderEta));
 
   const now = new Date();
-  const ts = `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}:${String(now.getSeconds()).padStart(2,"0")}`;
+  const ts = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
   const el = document.getElementById("update-time");
   if (el) el.textContent = `最後更新：${ts}`;
 
-  btn.classList.remove("loading");
-  btn.disabled = false;
+  if (btn) {
+    btn.classList.remove("loading");
+    btn.disabled = false;
+  }
+}
+
+/* ════════════════════════════════════════════════════════
+   定時器與省電控制（Page Visibility API）
+   ════════════════════════════════════════════════════════ */
+
+function startAutoRefresh() {
+  stopAutoRefresh();
+  refreshTimer = setInterval(refreshCurrentTab, 60000);
+}
+
+function stopAutoRefresh() {
+  if (refreshTimer) {
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
+}
+
+function setupVisibilityHandler() {
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      stopAutoRefresh();
+    } else {
+      refreshCurrentTab();
+      startAutoRefresh();
+    }
+  });
+}
+
+/* ════════════════════════════════════════════════════════
+   手機滑動手勢（Swipe Left/Right 切換 Tab）
+   ════════════════════════════════════════════════════════ */
+
+function setupSwipeGesture() {
+  const mainEl = document.querySelector("main");
+  if (!mainEl) return;
+
+  let startX = 0;
+  let startY = 0;
+
+  mainEl.addEventListener(
+    "touchstart",
+    (e) => {
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+    },
+    { passive: true }
+  );
+
+  mainEl.addEventListener(
+    "touchend",
+    (e) => {
+      const endX = e.changedTouches[0].clientX;
+      const endY = e.changedTouches[0].clientY;
+
+      const diffX = endX - startX;
+      const diffY = endY - startY;
+
+      // 判定為水平滑動且滑動距離超過 50px
+      if (Math.abs(diffX) > 50 && Math.abs(diffX) > Math.abs(diffY) * 1.5) {
+        if (diffX < 0 && activeTab === "out") {
+          // 向左滑動 -> 切換至「返家」
+          switchTab("home");
+          refreshCurrentTab();
+        } else if (diffX > 0 && activeTab === "home") {
+          // 向右滑動 -> 切換至「出街」
+          switchTab("out");
+          refreshCurrentTab();
+        }
+      }
+    },
+    { passive: true }
+  );
 }
 
 /* ════════════════════════════════════════════════════════
@@ -240,7 +317,7 @@ function buildGrid(routes, gridId, emptyId) {
 
 async function init() {
   // 建立兩個 Tab 的卡片
-  buildGrid(OUT_ROUTES,  "grid-out",  "empty-out");
+  buildGrid(OUT_ROUTES, "grid-out", "empty-out");
   buildGrid(HOME_ROUTES, "grid-home", "empty-home");
 
   // Tab 按鈕點擊事件
@@ -254,24 +331,25 @@ async function init() {
   // 更新按鈕
   document.getElementById("btn-refresh").addEventListener("click", refreshCurrentTab);
 
-  // GPS 偵測 → 決定預設 Tab（受 GPS_ENABLED 控制）
+  // GPS 偵測 → 決定預設 Tab
   const gpsDot = document.getElementById("gps-status");
-  if (GPS_ENABLED) {
+  if (typeof GPS_ENABLED !== "undefined" && GPS_ENABLED) {
     setGpsStatus("loading");
     const { tab, gpsState } = await detectTab();
     setGpsStatus(gpsState);
     switchTab(tab);
   } else {
-    // GPS 停用：隱藏狀態圓點，預設顯示「出街」Tab
     if (gpsDot) gpsDot.hidden = true;
     switchTab("out");
   }
 
-  // 首次載入 ETA
-  await refreshCurrentTab();
+  // 啟用手勢與可見度監聽
+  setupSwipeGesture();
+  setupVisibilityHandler();
 
-  // 每 60 秒自動更新
-  setInterval(refreshCurrentTab, 60000);
+  // 首次載入 ETA 並啟動自動更新
+  await refreshCurrentTab();
+  startAutoRefresh();
 }
 
 document.addEventListener("DOMContentLoaded", init);
