@@ -103,6 +103,14 @@ const HOME_ROUTES = [
     color: "#d35400",
   },
   {
+    route: "98A",
+    serviceType: "1",
+    stopId: "1E3A342DF7D5B8B5",
+    stopName: "apm創紀之城5期",
+    dest: "往將軍澳醫院",
+    color: "#c0392b",
+  },
+  {
     route: "38",
     serviceType: "1",
     stopId: "6DAB37A3FC9475C3",
